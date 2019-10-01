@@ -3,6 +3,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 from ximea import xiapi
+import numpy as np
 
 from time import sleep
 
@@ -102,9 +103,10 @@ class acquireThread(QtCore.QThread):
 				pass
 
 def odCalc(data):
+	import numpy as np
 	Atoms = ['K','Rb']
 	for k in Atoms: 
-		data[k]['OD'] = (data[k]['Shadow']-data[k]['Dark'])/(data[k]['Bright']-data[k]['Dark'])
+		data[k]['OD'] = -np.log((np.array(data[k]['Shadow']-data[k]['Dark'], dtype=np.float))/(np.array(data[k]['Bright']-data[k]['Dark'], dtype=np.float)))
 
 
 			
@@ -115,7 +117,7 @@ def saveData((path,file),data):
 		os.makedirs(path)
 
 	if path[-1] == '/':
-		savepath = path + file
+		savepath = path + file 
 	else:
 		savepath = path + '/' + file
 
@@ -124,10 +126,20 @@ def saveData((path,file),data):
 	imgSave['Rb'].pop('OD',None)
 	for i, ibar in imgSave.items():
 		for j, jbar in imgSave[i].items():
+			imgSave[i][j] = bin_array(imgSave[i][j], 2.0)
 			imgSave[i][j] = imgSave[i][j].tolist()
 
 
-	with open(savepath,'w') as outfile:
+	with open(savepath + '.temp','w') as outfile:
 		json.dump(imgSave,outfile,separators=(',',':')) 
 
+	os.rename(savepath + '.temp', savepath)
 
+
+
+def bin_array(array, binsize):
+	binsize = int(binsize)
+	array = np.array(array)
+	(dy, dx) = np.shape(array)
+	new_shape = (dy/binsize, binsize, dx/binsize, binsize)
+	return array.reshape(new_shape).sum(axis=(-1,1))

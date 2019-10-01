@@ -10,8 +10,17 @@ from matplotlib.figure import Figure
 from sCamera_helpers import *
 import numpy as np
 
+import os
+
 SN = '20851142'
-DEFAULTPATH = 'C:/Users/Ye Lab/Desktop/Luigi/sCamera/savefiles/'
+
+import datetime
+now = datetime.datetime.now()
+
+with open('./ip.txt') as f:
+	ip_str = f.read(100)
+DEFAULTPATH = now.strftime('//'+ip_str+'/krbdata/data/%Y/%m/%Y%m%d/ximea/') # PolarKRB's IP address
+FILEBASE = 'xi_'
 
 ### NOTE: @50 us exposure, camera saturates at ~1.5mW/cm^2
 
@@ -23,7 +32,7 @@ class userInterface(QtGui.QWidget):
 	def __init__(self):
 		super(userInterface, self).__init__(None)
 
-		self.lastFile = 1
+		self.lastFile = 0
 
 		self.setup()
 		self.camInitialize()
@@ -90,7 +99,7 @@ class userInterface(QtGui.QWidget):
 		self.parameters.exposureEdit = QtGui.QLineEdit('40',self)
 		self.parameters.xOffsetEdit = QtGui.QLineEdit('0',self)
 		self.parameters.yOffsetEdit = QtGui.QLineEdit('0',self)
-		self.parameters.frameWidthEdit = QtGui.QLineEdit('1280',self)
+		self.parameters.frameWidthEdit = QtGui.QLineEdit('768',self)
 		self.parameters.frameHeightEdit = QtGui.QLineEdit('1024',self)
 
 		self.parameters.frameLabel = QtGui.QLabel("Image Frame", self)
@@ -98,7 +107,7 @@ class userInterface(QtGui.QWidget):
 
 		self.parameters.buttonGroup = QtGui.QButtonGroup(self)
 		self.parameters.exposureStd = QtGui.QRadioButton('Standard Exposure',self)
-		self.parameters.exposureStd.toggle()
+		# self.parameters.exposureStd.toggle()
 		self.parameters.exposureStd.clicked.connect(self.exposureModeStd)
 
 		self.parameters.exposureTrg = QtGui.QRadioButton('Exposure on Trigger',self)
@@ -108,6 +117,9 @@ class userInterface(QtGui.QWidget):
 		self.parameters.buttonGroup.addButton(self.parameters.exposureTrg)
 		self.parameters.buttonGroupLabel = QtGui.QLabel('Exposure',self)
 		self.parameters.buttonGroupLabel.setFont(QtGui.QFont("Arial",14,QtGui.QFont.Bold))
+
+		self.parameters.exposureTrg.toggle()
+		self.parameters.exposureEdit.setDisabled(True)
 
 		self.parameters.downsamplingLabel = QtGui.QLabel('Downsampling',self)
 		self.parameters.downsamplingLabel.setFont(QtGui.QFont("Arial",14,QtGui.QFont.Bold))
@@ -131,10 +143,32 @@ class userInterface(QtGui.QWidget):
 		self.parameters.pathLabel = QtGui.QLabel('Path:', self)
 		self.parameters.pathEdit = QtGui.QLineEdit(DEFAULTPATH, self)
 
-		self.parameters.fileLabel = QtGui.QLabel('File number:', self)
-		self.parameters.fileEdit = QtGui.QLineEdit('{:03d}'.format(self.lastFile), self)
-		self.parameters.fileEdit.editingFinished.connect(self.boxChange)
+		# Crawl for file number
+		# Check if the directory exists
+		fileNumber = 0
+		if os.path.isdir(DEFAULTPATH):
+			filelist = os.listdir(DEFAULTPATH)
+			for file in filelist:
+				# Extract the file number
+				# Files are saved as KRBCAM_FILENAME_BASE + filenumber + .csv
+				ind1 = len(FILEBASE)
+				ind2 = file.find('.dat')
+				
+				# Compare file number, if it's bigger than set fileNumber to 1 greater than that
+				try:
+					substr = file[ind1:ind2]
+					num = int(substr)
+					if num >= fileNumber:
+						fileNumber = num + 1
+				except:
+					pass
+			self.lastFile = fileNumber
+		else:
+			self.lastFile = 0
 
+		self.parameters.fileLabel = QtGui.QLabel('File number:', self)
+		self.parameters.fileEdit = QtGui.QLineEdit('{}'.format(self.lastFile), self)
+		self.parameters.fileEdit.editingFinished.connect(self.boxChange)
 
 
 		self.parameters.layout = QtGui.QGridLayout()
@@ -192,11 +226,15 @@ class userInterface(QtGui.QWidget):
 		self.cam.set_param('gpi_mode', 'XI_GPI_TRIGGER')
 		self.cam.set_param('trigger_source', 'XI_TRG_EDGE_RISING')
 		self.cam.set_param('trigger_selector', 'XI_TRG_SEL_FRAME_START')
+		# self.cam.set_param('sensor_bit_depth', 'XI_BPP_10')
+		self.cam.set_param('gain', 5)
+
+		self.cam.set_param('imgdataformat', 'XI_MONO16')
 
 		
 		# self.cam.set_param('image_data_bit_depth','XI_BPP_10')
-		# print(self.cam.get_param('output_bit_depth'))
-		# print(self.cam.get_param('sensor_bit_depth'))
+		print(self.cam.get_param('output_bit_depth'))
+		print(self.cam.get_param('sensor_bit_depth'))
 		# print(self.cam.get_param('image_data_bit_depth'))
 
 	def updateParameters(self):
@@ -258,10 +296,10 @@ class userInterface(QtGui.QWidget):
 		try:
 			x = int(self.parameters.fileEdit.text())
 			self.lastfile = x
-			self.parameters.fileEdit.setText('{:03d}'.format(x))
+			self.parameters.fileEdit.setText('{}'.format(x))
 		except:
 			self.appendToStatus('File number must be an integer.')
-			self.parameters.fileEdit.setText('{:03d}'.format(self.lastFile+1))
+			self.parameters.fileEdit.setText('{}'.format(self.lastFile+1))
 
 
 	def exposureModeStd(self):
@@ -311,6 +349,7 @@ class userInterface(QtGui.QWidget):
 			self.appendToStatus('Acquisition Stopped.')
 			self.buttonAcquire.setText('Acquire')
 		else:
+			self.updateParameters()
 			self.appendToStatus('Starting acqusition.')
 			self.buttonAcquire.setText('Stop')
 			self.acq.running = True
@@ -327,17 +366,17 @@ class userInterface(QtGui.QWidget):
 
 		if self.parameters.saveBox.isChecked():
 			self.lastFile = int(self.parameters.fileEdit.text())
-			self.appendToStatus('Image {:03d} acquired. Saving...'.format(self.lastFile))
+			self.appendToStatus('Image {} acquired. Saving...'.format(self.lastFile))
 			
 
 			path = str(self.parameters.pathEdit.text())
-			file = str('XI' + datetime.now().strftime('%Y%m%d') + '_' + self.parameters.fileEdit.text() + '.dat')
+			file = str(FILEBASE + self.parameters.fileEdit.text() + '.dat')
 			saveData((path,file), self.dataHold)
 
 			self.appendToStatus('Image saved as: ' + file)
 
 
-			self.parameters.fileEdit.setText('{:03d}'.format(self.lastFile+1))
+			self.parameters.fileEdit.setText('{}'.format(self.lastFile+1))
 		else:
 			self.appendToStatus('Image acquired.')
 
